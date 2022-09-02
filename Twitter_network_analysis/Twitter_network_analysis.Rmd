@@ -1,0 +1,512 @@
+---
+title: "Twitter Network Analysis"
+runtime: shiny
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    social: menu
+    source_code: https://github.com/Lucainson/Twitter_network_analysis
+    theme: simplex
+resource_files:
+- .twitter_token.rds
+- .Renviron
+- .Rhistory
+- .httr-oauth
+- .gitignore
+- .Renviron
+- .rtweet_token.rds
+---
+
+
+
+
+
+
+
+```{r}
+
+#SETUP THE TIMEZONE
+Sys.setenv(TZ='GMT')
+
+#IMPORT OF THE RELEVANT PACKAGES
+suppressPackageStartupMessages(library(shiny))
+suppressPackageStartupMessages(library(flexdashboard))
+suppressPackageStartupMessages(library(shinyWidgets))
+suppressPackageStartupMessages(library(rtweet))
+suppressPackageStartupMessages(library(httr))
+suppressPackageStartupMessages(library(rjson))
+suppressPackageStartupMessages(library(jsonlite))
+suppressPackageStartupMessages(library(ROAuth))
+suppressPackageStartupMessages(library(tm))
+suppressPackageStartupMessages(library(tidytext))
+suppressPackageStartupMessages(library(widyr))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(igraph))
+suppressPackageStartupMessages(library(ggraph))
+suppressPackageStartupMessages(library(hrbrthemes))
+suppressPackageStartupMessages(library(ggmap))
+suppressPackageStartupMessages(library(tmap))
+suppressPackageStartupMessages(library(maps))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(visNetwork))
+suppressPackageStartupMessages(library(wordcloud2))
+
+```
+
+
+
+
+
+Sidebar {.sidebar}
+======================================================================
+
+```{r}
+#LOADING MESSAGE
+tags$body(tags$style(type="text/css", "
+             #loadmessage {
+               position: fixed;
+               top: 40px;
+               left: 0px;
+               width: 100%;
+               padding: 3px 0px 4px 0px;
+               text-align: center;
+               font-weight: bold;
+               font-size: 100%;
+               color: white;
+               font-family: Georgia;
+               background-color: #697773;
+               z-index: 100;
+             }
+          "))
+
+conditionalPanel(condition="$('html').hasClass('shiny-busy')",
+                 tags$div("Loading...",id="loadmessage"))
+
+
+    #Hide error
+    tags$style(type="text/css",
+               ".shiny-output-error { visibility: hidden; }",
+               ".shiny-output-error:before { visibility: hidden; }"
+    )
+
+
+chooseSliderSkin("Flat")
+
+br()
+
+radioButtons("category", "Category of search:",
+             c("String"="keywords", 
+               "Hashtag" = "hashtag",
+               "Username" = "util"
+             ))
+
+selectInput(inputId = "language",label="Choose a language:",
+            choices=c("All","Haitian creole","French","English","Spanish"), 
+            selected="All",multiple=F)
+                             
+textInput(inputId = "word",
+          #value = 'data science',
+          label = "Insert a string, hashtag or username:",placeholder = "search...")
+
+sliderInput("tws", "Maximum number of tweets:", 
+            min=100, max= 10000, value=300, step = 100)
+
+actionButton("update", "Collect the data",icon("search"),style="color: white;backgroud-color: #337ab7")
+                             
+br()
+
+```
+
+This web app allows you to do network analysis with twitter data. You can make community detection among people who interact in terms of retweets; you can detect the topics discussed, and can map their geographical positions... 
+
+Application author: [Lucainson RAYMOND](https://www.linkedin.com/in/lucainson-raymond-3a05ab123/), Port-au-Prince, 2022
+
+
+Home
+======================================================================
+
+```{r, eval=TRUE, message=FALSE, warning=FALSE, include=FALSE}
+
+# the user must have a Twitter developer account in view to have the credentials (access token and access token secret) via the twitter API allowing him/her to do the data request
+rtweet::get_token()
+
+#input update - user
+username <-reactive({
+  req(input$word)
+  userr = sub('@','',input$word)
+  paste0("@",userr)
+})
+
+#input update - hashtag
+#Adding '#' before the word for Twitter searching purpose
+hashtag <-reactive({
+  req(input$word)
+  hasht = sub('#','',input$word)
+  paste0("#",hasht)
+})
+
+#data gathering and plot generation
+rt_1 = eventReactive(input$update,{
+  
+  if(input$category == 'keywords' & input$language == 'All') {
+    
+    #tweet gathering and error handling based on input type
+    search_tweets2(q = as.character(input$word),
+                   n = input$tws)
+    
+  } else if(input$category == 'keywords' & input$language == 'English'){
+    
+        #tweet gathering and error handling based on input type
+    search_tweets2(q = as.character(input$word),
+                   n = input$tws, lang = 'en')
+    
+  } else if(input$category == 'keywords' & input$language == 'French'){
+    
+            #tweet gathering and error handling based on input type
+    search_tweets2(q = as.character(input$word),
+                   n = input$tws, lang = 'fr')
+    
+  } else if(input$category == 'keywords' & input$language == 'Haitian creole'){
+    
+                #tweet gathering and error handling based on input type
+    search_tweets2(q = as.character(input$word),
+                   n = input$tws, lang = 'ht')
+    
+  } else if(input$category == 'keywords' & input$language == 'Spanish'){
+    
+                #tweet gathering and error handling based on input type
+    search_tweets2(q = as.character(input$word),
+                   n = input$tws, lang = 'es')
+    
+  } else if(input$category == 'hashtag' & input$language == 'All'){
+    
+        #tweet gathering and error handling based on input type
+    search_tweets2(q = hashtag(),
+                   n = input$tws)
+    
+  } else if(input$category == 'hashtag' & input$language == 'English'){
+    
+            #tweet gathering and error handling based on input type
+    search_tweets2(q = hashtag(),
+                   n = input$tws, lang = 'en')
+    
+  } else if (input$category == 'hashtag' & input$language == 'French'){
+    
+                #tweet gathering and error handling based on input type
+    search_tweets2(q = hashtag(),
+                   n = input$tws, lang = 'fr')
+    
+  } else if (input$category == 'hashtag' & input$language == 'Haitian creole'){
+    
+                #tweet gathering and error handling based on input type
+    search_tweets2(q = hashtag(),
+                   n = input$tws, lang = 'ht')
+    
+  } else if (input$category == 'hashtag' & input$language == 'Spanish'){
+    
+                #tweet gathering and error handling based on input type
+    search_tweets2(q = hashtag(),
+                   n = input$tws, lang = 'es')
+    
+  } else if(input$category == 'util' & (input$language == "All" | input$language =="Haitian creole" | input$language == "French" | input$language == "English" | input$language == "Spanish")){
+    
+                    #tweet gathering and error handling based on input type
+    get_timeline(user = username(),
+                   n = input$tws, retryOnRateLimit = T)
+    
+  } else {
+    
+    return(NULL)
+  }
+  
+})
+
+
+```
+
+
+
+
+Column {data-width=550}
+-----------------------------------------------------------------------
+
+### Network analysis between people based on retweets
+
+```{r, eval=T}
+
+output$visnet <-renderVisNetwork({
+  
+  shiny::validate(
+                need(nrow(rt_1()) >= 2,
+                     paste0("No results. ","Please, readjust your search!")))
+                   
+
+# Create data frame for the network
+rt_df <- rt_1()[, c("screen_name" , "retweet_screen_name" )]
+
+# Remove rows with missing values
+rt_df_new <- rt_df[complete.cases(rt_df), ]
+
+# Convert to matrix
+matrx <- as.matrix(rt_df_new)
+
+# Create the retweet network
+nw_rtweet <- graph_from_edgelist(el = matrx, directed = TRUE)
+
+#Delete edges
+Isolated = which(degree(nw_rtweet)<1)
+nw_rtweet2 = delete.vertices(nw_rtweet, Isolated)
+
+#Convert to visnetwork object
+data = toVisNetworkData(nw_rtweet)
+
+visNetwork(nodes = data$nodes, edges = data$edges, main="Community detection among users", 
+           submain = "Based on retweet dynamics", font = "white", background="black") %>% 
+    visEvents(type = "once", startStabilizing = "function() {
+            this.moveTo({scale:0.1})}") %>%
+  visPhysics(stabilization = FALSE)%>%
+  visOptions(highlightNearest = TRUE)%>% 
+  visEdges(arrows = 'from',font='black')%>%
+  visInteraction(navigationButtons = TRUE,
+  tooltipStyle = 'position: fixed;visibility:hidden;padding: 5px;white-space: nowrap;
+ font-family: cursive;font-size:18px;font-color:primary;background-color: red')%>%
+  visNodes(font= '14px arial white')
+})
+
+
+visNetworkOutput('visnet')
+
+```
+
+
+
+
+Column {data-width=450}
+-----------------------------------------------------------------------
+
+### Wordcloud based on words with highest frequency
+
+```{r, eval = T, fig.width=9}
+
+output$wordcl <- renderWordcloud2({
+  
+    shiny::validate(
+                need(nrow(rt_1()) >= 2,
+                     paste0("No results. ","Please, readjust your search!")))
+  
+#Let's clean up the text, removing other non-informative "regex" (url, numbers, useless white spaces, punctuation ...)
+twitter <- data.frame(text=rt_1()$text)
+twitter$text <- as.character(twitter$text)
+twitter$text <- gsub('\\p{So}|\\p{Cn}', '', twitter$text, perl = TRUE)
+twitter$text <- gsub('http\\S+\\s*', '', twitter$text)
+twitter$text <- gsub("[[:digit:]]", '', twitter$text)
+twitter$text <- gsub('\\b+RT', '', twitter$text)
+twitter$text <- gsub('#\\S+', '', twitter$text)
+twitter$text <- gsub('@\\S+', '', twitter$text)
+twitter$text <- gsub("+509\\S+", '', twitter$text)
+twitter$text <- gsub('[[:cntrl:]]', '', twitter$text)
+twitter$text <- gsub("\\d", '', twitter$text)
+twitter$text <- gsub("[:graph:]]", '', twitter$text)
+twitter$text <- gsub("<(.+)>", '', twitter$text)
+twitter$text <- gsub('<p{So}|>p{Cn}', '', twitter$text, perl = TRUE)
+twitter$text <- gsub("\uFFFD", "", twitter$text, fixed=TRUE)
+
+#Remove input word
+a_stop =  data.frame(v = input$word, f = 1)%>%
+  unnest_tokens(w,v)
+
+
+# Create a vector of custom stop words
+custom_stop <- c("can", "amp", "one", "like", "will", "just",
+"many", "new", "know", "also", "may", "now",
+"get", "s", "t", "m", "re", a_stop$w)
+
+#Let's start by cleaning it, by drop some useless words (stopwords) in french, english and haitian creole (one of my two native languages)
+        to_remove <- c(
+                        "ref","amp","très", "dass","lap","bout","en","schon","me","dak","met","fok","aprs","more",
+                        "android.s.wt","nn", "sticker","yo", "de","pa","la","se","ki","c","gen","mw","nou","than",
+                        "ou","li","pou","w","nan","yon","nou","k","a","men","f","ke","cependant","also","too","always",
+                        "ak","an","sou","tout","menm","si","e","https","ap","tou","paske","dirk","omis","much",
+                        "epi","epwi","lan","mpa","non","mwen","ka","we","fè","tt","fe","stp","gon","gen","moun","ion",
+                        "konn","jan","s'on","anpil","oui","wap","épi","plus","pi","c'est","ion","yon","youn","sa",
+                        "lot","lè","oubyen","tap","oswa","ds","ave","etre","ui","mte","pouw","t","poukisa","toujours",
+                        "tj","u","jus","jis","ete","w'ap","g'on","lol",'poun',"sak","fè","supprim","pourquoi",
+                        "que","qui","pap","pat","nan","toujours","it","i","of",'you',"very","and","donk","san","son",
+                        "chak","ns","etc","fé","saaa","laa","laaa","mgen","nap","2350","2019","parce","enfin","quand",
+                        "kap",'al',"this","the","supprim","for","l","while","may","peut","peuvent","yap","pour",
+                        "toujou","mar","to","ti","di","wi","ye","2","have","are","dil","fel","map","because",
+                        "ok","fon","anh","svp","dim","forms.gle","that","siw","d'i","meme","o","in","mais","why",
+                        "sonw","sak","deux","faire",'fait','fait faire',"wimax","eske","poutan","kote","pero",
+                        "w","anko","kek","ankò","kèk","added","untitled","p","io","ui","uii","uiii","pral","tambien",
+                        "509","poum","poun","konsa","bn","en","ann","hein","via","one","two","dirk","2400")
+        
+
+
+# Specification of a function to lower case all tokens (1-gram) of the text
+tryTolower <- function(x){
+  # return NA when there is an error
+  y=NA
+  # tryCatch error
+  try_error= tryCatch(tolower(x),error=function(e) e)
+  if (!inherits(try_error, 'error'))
+    y=tolower(x)
+  
+  return(y)
+}
+
+#Cleaning (continued)
+custom.stopwords <- c(stopwords('english'), stopwords('french'),stopwords('spanish'),custom_stop,to_remove)
+clean.corpus <- function(corpus) {
+  corpus <- tm_map(corpus,
+                   content_transformer(tryTolower))
+  corpus <- tm_map(corpus,removeWords,
+                   custom.stopwords)
+  corpus<-tm_map(corpus,removePunctuation)
+  corpus <- tm_map(corpus,stripWhitespace)
+  corpus <- tm_map(corpus,removeNumbers)
+  return(corpus)
+}
+corpus <- Corpus(VectorSource(twitter$text))
+corpus <- clean.corpus(corpus)
+
+#Conversion now of the corpus into a Document-Term-Matrix object
+dtm <- DocumentTermMatrix(corpus)
+
+#Preparing the text corpus for plotting a wordcloud
+pattern<-"[[:xdigit:]]"
+
+wh_td <- tidy(dtm)
+
+w<-grep(pattern, wh_td$term, value = TRUE)%>%
+  as.data.frame()
+w$x<-1
+
+wh_words <- w %>%
+  group_by(as.factor(.))%>%
+  count(sort=TRUE)%>%
+  filter(n >= 10)
+
+#Wordcloud
+set.seed(1996)
+wordcloud2(data=wh_words,size=0.8,fontFamily = "Cambria",
+           color = "random-light",backgroundColor = "black")
+
+})
+
+
+wordcloud2Output('wordcl')
+```
+
+
+
+
+### Map of users on twitter
+
+```{r, eval=T, fig.width=9}
+
+output$tweet_map <- renderPlot({
+  
+    shiny::validate(
+                need(nrow(rt_1()) >= 2,
+                     paste0("No results. ","Please, readjust your search!")))
+  
+world <- map_data("world")
+
+# change the region names to match the region names returned by Google Trends
+world %>%
+  mutate(region = replace(region, region=="USA", "United States")) %>%
+  mutate(region = replace(region, region=="UK", "United Kingdom")) -> world
+
+# create data frame for plotting
+map_rt = lat_lng(rt_1())
+
+my_df = map_rt%>%
+  filter(location %in% world$region, !is.na(location)) %>%
+  mutate(region = location) %>%
+  select(region, location)%>%
+  group_by(region,location)%>%
+  count()%>%
+  rename(Frequency = n)
+
+ggplot() +
+  geom_map(data = world,
+           map = world,
+           aes(x = long, y = lat, map_id = region),
+           fill="#ffffff", color="#ffffff", size=0.15) +
+  geom_map(data = my_df,
+           map = world,
+           aes(fill = Frequency,map_id = region),
+           color="#ffffff", size=0.15) +
+  scale_fill_continuous(low = 'grey', high = "red") +
+  theme(axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+theme(legend.position = 'bottom'
+        #legend.spacing.x = unit(0.2, 'cm')
+      )
+
+})
+
+plotOutput('tweet_map')
+
+```
+
+
+
+<style>
+
+.section.sidebar {
+
+  background-color: white; 
+  font-family: Georgia;
+
+}
+
+.js-irs-0 .irs-bar {
+border-top-color: #443A83;
+border-bottom-color: #443A83;
+} 
+
+.js-irs-0 .irs-bar-edge {
+border-color: #443A83;
+}
+
+.js-irs-0 .irs-single, .js-irs-0 .irs-bar-edge, .js-irs-0 .irs-bar {
+background: #443A83;
+}
+
+.navbar-inverse {
+background-color: #443A83;
+border-color: #440154;
+}
+
+.navbar-inverse .navbar-brand {
+color: #a3a9ac;
+}
+
+a:hover, a:focus {
+color: #440154;
+text-decoration: underline;
+}
+
+a {
+color: #443A83;
+text-decoration: none;
+}
+
+.navbar-inverse .navbar-nav>li>a {
+color: #a3a9ac;
+}
+
+body {
+  font-family: Georgia;
+  font-color: black;
+}
+
+
+</style>
+
+
